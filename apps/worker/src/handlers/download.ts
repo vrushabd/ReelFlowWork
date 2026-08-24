@@ -174,7 +174,7 @@ export async function handleDownload(job: Job<DownloadJobData>) {
       where: { id: reelId },
       data: {
         status: 'FAILED',
-        errorLog: `Download failed: ${error.message}`,
+        errorMessage: `Download failed: ${error.message}`,
       },
     });
     throw error;

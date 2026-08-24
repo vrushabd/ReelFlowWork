@@ -1,0 +1,307 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  instagramAccounts InstagramAccount[]
+  systemLogs        SystemLog[]
+}
+
+enum UserRole {
+  ADMIN
+  VIEWER
+}
+
+// ─── Instagram Account ────────────────────────────────────────────────────────
+
+model InstagramAccount {
+  id                String    @id @default(cuid())
+  userId            String
+  instagramUserId   String    @unique
+  username          String
+  accountType       String    @default("PERSONAL") // PERSONAL | BUSINESS | CREATOR
+  accessTokenEnc    String    // encrypted
+  tokenExpiresAt    DateTime?
+  isConnected       Boolean   @default(true)
+  profilePictureUrl String?
+  followersCount    Int?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  posts Post[]
+
+  @@index([userId])
+}
+
+// ─── Reel ─────────────────────────────────────────────────────────────────────
+
+model Reel {
+  id               String     @id @default(cuid())
+  sourceUrl        String
+  normalizedUrl    String
+  urlHash          String     @unique
+  status           ReelStatus @default(PENDING)
+  title            String?
+  postingMode      PostingMode @default(MANUAL)
+  videoId          String?    @unique
+  captionId        String?    @unique
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  instagramMediaId String?
+  attempts         Int        @default(0)
+  maxAttempts      Int        @default(3)
+  errorMessage     String?
+  skipReason       String?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  video      Video?      @relation(fields: [videoId], references: [id])
+  caption    Caption?    @relation(fields: [captionId], references: [id])
+  jobs       ProcessingJob[]
+  publishJob PublishJob?
+  post       Post?
+  logs       SystemLog[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([urlHash])
+}
+
+enum ReelStatus {
+  PENDING
+  DOWNLOADING
+  DOWNLOADED
+  PROCESSING
+  PROCESSED
+  CAPTION_GENERATING
+  READY
+  SCHEDULED
+  UPLOADING
+  PUBLISHED
+  FAILED
+  SKIPPED_DUPLICATE
+}
+
+enum PostingMode {
+  IMMEDIATELY
+  SCHEDULED
+  MANUAL
+}
+
+// ─── Video ────────────────────────────────────────────────────────────────────
+
+model Video {
+  id            String   @id @default(cuid())
+  filePath      String
+  storagePath   String?
+  sha256        String   @unique
+  mimeType      String   @default("video/mp4")
+  size          BigInt
+
+  // Processed video quality
+  width         Int?
+  height        Int?
+  duration      Float?
+  fps           Float?
+  codec         String?
+  thumbnailPath String?
+
+  // Source (pre-processing) quality — preserved for comparison in Quality Dashboard
+  sourceWidth       Int?
+  sourceHeight      Int?
+  sourceCodec       String?
+  sourceFps         Float?
+  sourceHasAudio    Boolean?
+  sourceAudioCodec  String?
+
+  // Audio metadata
+  audioCodec        String?
+  audioBitrate      Int?
+  audioSampleRate   Int?
+  audioChannels     Int?
+
+  // Cloudinary upload metadata
+  cloudinaryPublicId  String?
+  cloudinaryBytes     BigInt?
+  cloudinaryWidth     Int?
+  cloudinaryHeight    Int?
+  cloudinaryDuration  Float?
+  cloudinaryFormat    String?
+
+  createdAt     DateTime @default(now())
+
+  reel Reel?
+}
+
+// ─── Processing Job ───────────────────────────────────────────────────────────
+
+model ProcessingJob {
+  id          String        @id @default(cuid())
+  reelId      String
+  type        JobType
+  status      JobStatus     @default(PENDING)
+  bullJobId   String?
+  attempt     Int           @default(0)
+  errorMessage String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+
+  @@index([reelId])
+  @@index([type, status])
+}
+
+enum JobType {
+  DOWNLOAD
+  PROCESS
+  CAPTION
+  PUBLISH
+  CLEANUP
+}
+
+enum JobStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  FAILED
+  DELAYED
+}
+
+// ─── Publish Job ──────────────────────────────────────────────────────────────
+
+model PublishJob {
+  id          String    @id @default(cuid())
+  reelId      String    @unique
+  bullJobId   String?
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  status      JobStatus @default(PENDING)
+  errorMessage String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+}
+
+// ─── Caption ──────────────────────────────────────────────────────────────────
+
+model Caption {
+  id        String   @id @default(cuid())
+  text      String
+  hashtags  String
+  shortTitle String?
+  aiProvider String?
+  isEdited  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reel Reel?
+}
+
+// ─── Post ─────────────────────────────────────────────────────────────────────
+
+model Post {
+  id                 String      @id @default(cuid())
+  reelId             String      @unique
+  instagramAccountId String?
+  instagramMediaId   String?
+  status             PostStatus  @default(PENDING)
+  publishedAt        DateTime?
+  errorMessage       String?
+  // Instagram Insights (when available)
+  reach              Int?
+  impressions        Int?
+  likes              Int?
+  comments           Int?
+  shares             Int?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  reel             Reel              @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  instagramAccount InstagramAccount? @relation(fields: [instagramAccountId], references: [id])
+
+  @@index([publishedAt])
+}
+
+enum PostStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+// ─── Schedule ─────────────────────────────────────────────────────────────────
+
+model Schedule {
+  id        String   @id @default(cuid())
+  reelId    String
+  cronExpr  String?
+  runAt     DateTime
+  timezone  String   @default("Asia/Kolkata")
+  executed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([runAt, executed])
+}
+
+// ─── System Log ───────────────────────────────────────────────────────────────
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     LogLevel @default(INFO)
+  component String
+  message   String
+  jobId     String?
+  reelId    String?
+  userId    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  reel Reel? @relation(fields: [reelId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([level])
+  @@index([component])
+  @@index([createdAt])
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+}
+
+// ─── Setting ──────────────────────────────────────────────────────────────────
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  isSecret  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}

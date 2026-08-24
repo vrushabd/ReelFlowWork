@@ -1,0 +1,24 @@
+{
+  "name": "@reelflow/database",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx src/seed.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.15.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.15.0",
+    "typescript": "^5.4.5",
+    "tsx": "^4.15.0",
+    "@types/node": "^20.14.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
+}

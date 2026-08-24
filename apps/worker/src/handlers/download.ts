@@ -18,16 +18,39 @@ function streamToFile(url: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proto = url.startsWith('https') ? https : http;
     const file = fs.createWriteStream(outputPath);
+    
     proto.get(url, (response) => {
       if (response.statusCode !== 200) {
-        file.close();
-        reject(new Error(`Downloader service returned HTTP ${response.statusCode}`));
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => { body += chunk; });
+        response.on('end', () => {
+          file.close();
+          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+          let errorDetail = '';
+          try {
+            const parsed = JSON.parse(body);
+            errorDetail = parsed.error || parsed.message || '';
+          } catch {
+            errorDetail = body ? body.slice(0, 300) : '';
+          }
+          reject(new Error(`Downloader service HTTP ${response.statusCode}${errorDetail ? ': ' + errorDetail : ''}`));
+        });
         return;
       }
+
       response.pipe(file);
       file.on('finish', () => { file.close(); resolve(); });
-      file.on('error', (err) => { file.close(); reject(err); });
-    }).on('error', reject);
+      file.on('error', (err) => { 
+        file.close(); 
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        reject(err); 
+      });
+    }).on('error', (err) => {
+      file.close();
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      reject(err);
+    });
   });
 }
 
@@ -51,8 +74,16 @@ export async function handleDownload(job: Job<DownloadJobData>) {
     console.log(`[Download] Fetching metadata for: ${url}`);
     const metaResponse = await fetch(`${DOWNLOADER_API_URL}/?url=${encodeURIComponent(url)}`);
     if (!metaResponse.ok) {
-      throw new Error(`Downloader metadata API returned ${metaResponse.status}`);
+      let errBody = '';
+      try {
+        const json = await metaResponse.json() as any;
+        errBody = json.error || json.message || '';
+      } catch {
+        errBody = await metaResponse.text().catch(() => '');
+      }
+      throw new Error(`Downloader metadata service failed (${metaResponse.status}): ${errBody || metaResponse.statusText}`);
     }
+
     const metadata = await metaResponse.json() as {
       title?: string;
       description?: string;
@@ -72,8 +103,6 @@ export async function handleDownload(job: Job<DownloadJobData>) {
     const tempFilePath = path.join(STORAGE_PATH, `${reelId}_raw.mp4`);
 
     // 2. Download best-quality muxed file via /download endpoint
-    // The downloader service runs yt-dlp internally and returns a single
-    // high-quality MP4 (with muxed audio if separate streams were available)
     console.log(`[Download] Downloading best-quality file (source: ${metadata.width || '?'}x${metadata.height || '?'} ${metadata.vcodec || '?'})`);
     await streamToFile(
       `${DOWNLOADER_API_URL}/download?url=${encodeURIComponent(url)}`,
@@ -138,14 +167,15 @@ export async function handleDownload(job: Job<DownloadJobData>) {
     });
 
     console.log(`[Download] Successfully downloaded Reel: ${reelId} (${metadata.width}x${metadata.height})`);
+
   } catch (error: any) {
-    console.error(`[Download] Failed for Reel: ${reelId}`, error);
+    console.error(`[Download] Error for Reel ${reelId}:`, error);
     await prisma.reel.update({
       where: { id: reelId },
       data: {
         status: 'FAILED',
-        errorMessage: `Download failed: ${error.message}`,
-      }
+        errorLog: `Download failed: ${error.message}`,
+      },
     });
     throw error;
   }

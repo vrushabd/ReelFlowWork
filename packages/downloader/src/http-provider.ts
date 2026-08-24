@@ -35,7 +35,8 @@ export class HttpDownloaderProvider implements DownloaderProvider {
         downloadUrl: data.download_link,
       };
     } catch (error: any) {
-      throw new Error(`Failed to fetch video metadata: ${error.message}`);
+      const errorDetail = error.response?.data?.error || error.response?.data?.message || error.message;
+      throw new Error(`Failed to fetch video metadata: ${errorDetail}`);
     }
   }
 
@@ -45,7 +46,8 @@ export class HttpDownloaderProvider implements DownloaderProvider {
       await pipeline(response.data, fs.createWriteStream(outputPath));
       return outputPath;
     } catch (error: any) {
-      throw new Error(`Failed to download video file: ${error.message}`);
+      const errorDetail = error.response?.data?.error || error.response?.data?.message || error.message;
+      throw new Error(`Failed to download video file: ${errorDetail}`);
     }
   }
 }

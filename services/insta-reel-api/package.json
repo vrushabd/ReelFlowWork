@@ -1,0 +1,17 @@
+{
+  "name": "insta-reel-api",
+  "version": "1.0.0",
+  "description": "Instagram Reel downloader API using yt-dlp",
+  "main": "src/index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}

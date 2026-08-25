@@ -1,6 +1,29 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CaptionProvider, GeneratedCaption } from './provider';
 
+function sanitizeSourceContext(context: string): string {
+  const sanitized = context
+    .replace(/^video\s+by\s+[^\n|–—-]+/i, 'Instagram Reel')
+    .replace(/(?:credit|creator|owner|source)\s*:?\s*@?[a-z0-9._]+/gi, '')
+    .replace(/@[a-z0-9._]+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return sanitized || 'Instagram Reel';
+}
+
+function stripOwnerMentions(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+
+  const sanitized = value
+    .replace(/(?:credit(?:s)?(?:\s+to)?|creator|owner|source)\s*:?\s*@?[a-z0-9._]+/gi, '')
+    .replace(/@[a-z0-9._]+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return sanitized || fallback;
+}
+
 export class GeminiProvider implements CaptionProvider {
   private ai: GoogleGenerativeAI;
 
@@ -9,6 +32,7 @@ export class GeminiProvider implements CaptionProvider {
   }
 
   async generateCaption(context: string): Promise<GeneratedCaption> {
+    const safeContext = sanitizeSourceContext(context);
     const prompt = `
 You are an expert Instagram social media manager for a page focused on Hindi music, music covers, scenery, nature, cinematic travel, and original/authorized aesthetic short-form videos.
 
@@ -18,14 +42,15 @@ Rules:
 1. Never claim facts that aren't present in the context.
 2. Output strictly in JSON format matching the schema below.
 3. No markdown blocks in output, just raw JSON.
-4. Do not write captions like "check this reel from", "watch this reel from", or "credit: @xyz" unless attribution is explicitly requested.
-5. For Hindi music or covers, use natural Hindi, Hinglish, or English depending on the context.
-6. Use emotional, music-first language for songs and peaceful, cinematic language for scenery.
-7. Generate 5 to 10 relevant hashtags. Do not reuse the same generic hashtag set every time.
-8. Do not claim something is currently trending unless current trend data appears in the context.
+4. Never mention, tag, credit, or name the source Reel owner/creator. Do not include usernames or @handles in the caption or short title.
+5. Do not write phrases such as "video by", "reel by", "check this reel from", "watch this reel from", "credit to", or "source".
+6. For Hindi music or covers, use natural Hindi, Hinglish, or English depending on the context.
+7. Use emotional, music-first language for songs and peaceful, cinematic language for scenery.
+8. Generate 5 to 10 relevant hashtags. Do not reuse the same generic hashtag set every time.
+9. Do not claim something is currently trending unless current trend data appears in the context.
 
 Context:
-"${context}"
+"${safeContext}"
 
 JSON Schema:
 {
@@ -48,9 +73,9 @@ JSON Schema:
       const hashtags = Array.isArray(parsed.hashtags) ? parsed.hashtags.join(' ') : parsed.hashtags;
 
       return {
-        caption: parsed.caption || 'Some moments just stay with you.',
+        caption: stripOwnerMentions(parsed.caption, 'Some moments just stay with you.'),
         hashtags: hashtags || '#musicreels #naturelovers #cinematic',
-        shortTitle: parsed.shortTitle || 'Instagram Reel',
+        shortTitle: stripOwnerMentions(parsed.shortTitle, 'Instagram Reel'),
         category: parsed.category || 'other',
         tone: parsed.tone || 'other',
         hookType: parsed.hookType || 'simple',

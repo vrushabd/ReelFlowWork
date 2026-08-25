@@ -76,9 +76,7 @@ export async function handleCaption(job: Job<CaptionJobData>) {
     try {
       const reel = await prisma.reel.findUnique({ where: { id: reelId } });
       const safeTitle = sanitizeCaptionContext(reel?.title);
-      const fallbackCaption = safeTitle === 'Instagram Reel'
-        ? 'Some moments just stay with you.'
-        : safeTitle;
+      const fallbackCaption = '今夜、Vは「Vogue World: Hollywood」の会場に姿を現しライブパフォーマンスを楽しみました。自身も際立ったファッションセンスで知られる彼は、ランウェイにふさわしい装いで、肩の力の抜けたスタイリッシュな姿を披露しました。';
       const caption = await prisma.caption.create({
         data: {
           text: fallbackCaption,

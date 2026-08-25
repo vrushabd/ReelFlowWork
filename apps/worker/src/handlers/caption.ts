@@ -3,6 +3,19 @@ import { CaptionJobData, publishQueue } from '@reelflow/queue';
 import { prisma } from '@reelflow/database';
 import { getAiProvider } from '@reelflow/ai';
 
+function sanitizeCaptionContext(value?: string | null): string {
+  if (!value) return 'Instagram Reel';
+
+  const sanitized = value
+    .replace(/^video\s+by\s+[^\n|–—-]+/i, '')
+    .replace(/(?:credit|creator|owner|source)\s*:?\s*@?[a-z0-9._]+/gi, '')
+    .replace(/@[a-z0-9._]+/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return sanitized || 'Instagram Reel';
+}
+
 export async function handleCaption(job: Job<CaptionJobData>) {
   const { reelId } = job.data;
   
@@ -19,7 +32,7 @@ export async function handleCaption(job: Job<CaptionJobData>) {
 
     const aiKeySetting = await prisma.setting.findUnique({ where: { key: 'AI_API_KEY' } });
     const ai = getAiProvider(aiKeySetting?.value);
-    const context = reel.title || 'Instagram video';
+    const context = sanitizeCaptionContext(reel.title);
     
     // Generate AI Caption
     const generated = await ai.generateCaption(context);
@@ -62,11 +75,15 @@ export async function handleCaption(job: Job<CaptionJobData>) {
     console.log(`[Caption] Using fallback caption for Reel: ${reelId}`);
     try {
       const reel = await prisma.reel.findUnique({ where: { id: reelId } });
+      const safeTitle = sanitizeCaptionContext(reel?.title);
+      const fallbackCaption = safeTitle === 'Instagram Reel'
+        ? 'Some moments just stay with you.'
+        : safeTitle;
       const caption = await prisma.caption.create({
         data: {
-          text: reel?.title || 'Some moments just stay with you.',
+          text: fallbackCaption,
           hashtags: '#musicreels #naturelovers #cinematic',
-          shortTitle: reel?.title || 'Instagram Reel',
+          shortTitle: safeTitle,
           aiProvider: 'fallback',
         }
       });

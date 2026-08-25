@@ -1,4 +1,4 @@
-import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
+import { v2 as cloudinary, UploadApiOptions, UploadApiResponse } from 'cloudinary';
 
 export type CloudinaryConfig = {
   cloudName: string;
@@ -75,22 +75,29 @@ export async function uploadVideoToCloudinary(
 
   const folder = 'reelflow/reels';
   const publicId = `reel_${reelId}`;
+  const canonicalPublicId = `${folder}/${publicId}`;
+  const uploadOptions: UploadApiOptions = {
+    resource_type: 'video',
+    public_id: canonicalPublicId,
+    overwrite: true,
+    use_filename: false,
+    unique_filename: false,
+  };
 
   console.log(`[Cloudinary] Starting signed video upload...`);
+  console.log(`  cloud_name:    ${config.cloudName}`);
   console.log(`  folder:        ${folder}`);
   console.log(`  public_id:     ${publicId}`);
-  console.log(`  resource_type: video`);
-  console.log(`  overwrite:     true`);
+  console.log(`  resource_type: ${uploadOptions.resource_type}`);
+  console.log(`  overwrite:     ${String(uploadOptions.overwrite)}`);
 
   try {
-    const result: UploadApiResponse = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'video',
-      folder,
-      public_id: publicId,
-      overwrite: true,
-      use_filename: false,
-      unique_filename: false,
-    });
+    const stats = await import('node:fs/promises').then((fs) => fs.stat(filePath));
+    const shouldUseLargeUpload = stats.size > 100 * 1024 * 1024;
+
+    const result: UploadApiResponse = shouldUseLargeUpload
+      ? await cloudinary.uploader.upload_large(filePath, uploadOptions)
+      : await cloudinary.uploader.upload(filePath, uploadOptions);
 
     if (!result || !result.secure_url) {
       throw new Error('Cloudinary upload did not return a secure URL.');
@@ -111,7 +118,14 @@ export async function uploadVideoToCloudinary(
       duration: result.duration,
     };
   } catch (error: any) {
-    console.error(`[Cloudinary Error] Upload failed: ${error.message || error}`);
+    console.error('[Cloudinary Error] Upload failed with safe metadata:', {
+      cloudName: config.cloudName,
+      folder,
+      publicId,
+      resourceType: uploadOptions.resource_type,
+      overwrite: uploadOptions.overwrite,
+      message: error?.message || String(error),
+    });
     throw new Error(`Cloudinary upload failed: ${error.message || error}`);
   }
 }

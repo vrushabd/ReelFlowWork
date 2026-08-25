@@ -77,11 +77,30 @@ export async function handleDownload(job: Job<DownloadJobData>) {
       let errBody = '';
       try {
         const json = await metaResponse.json() as any;
-        errBody = json.error || json.message || '';
+        const safeParts = [
+          json.error,
+          json.message,
+          json.detail,
+          json.code ? `code=${json.code}` : '',
+        ].filter(Boolean);
+        errBody = safeParts.join(' | ');
       } catch {
         errBody = await metaResponse.text().catch(() => '');
       }
-      throw new Error(`Downloader metadata service failed (${metaResponse.status}): ${errBody || metaResponse.statusText}`);
+
+      const safeErrorDetail = (errBody || metaResponse.statusText || 'Unknown downloader error')
+        .replace(/\s+/g, ' ')
+        .slice(0, 500);
+
+      console.error('[Download] Downloader metadata request failed:', {
+        reelId,
+        url,
+        downloaderStatus: metaResponse.status,
+        downloaderStatusText: metaResponse.statusText,
+        detail: safeErrorDetail,
+      });
+
+      throw new Error(`Downloader metadata service failed (${metaResponse.status}): ${safeErrorDetail}`);
     }
 
     const metadata = await metaResponse.json() as {

@@ -17,6 +17,17 @@ export type CloudinaryUploadResult = {
   duration?: number;
 };
 
+type CloudinaryUploadResponseLike = Partial<UploadApiResponse> & {
+  secure_url?: string;
+  public_id?: string;
+  resource_type?: string;
+  format?: string;
+  bytes?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+};
+
 function parseCloudinaryUrl(value: string): CloudinaryConfig | null {
   try {
     const parsed = new URL(value);
@@ -95,12 +106,14 @@ export async function uploadVideoToCloudinary(
     const stats = await import('node:fs/promises').then((fs) => fs.stat(filePath));
     const shouldUseLargeUpload = stats.size > 100 * 1024 * 1024;
 
-    const result: UploadApiResponse = shouldUseLargeUpload
+    const rawResult = shouldUseLargeUpload
       ? await cloudinary.uploader.upload_large(filePath, uploadOptions)
       : await cloudinary.uploader.upload(filePath, uploadOptions);
 
-    if (!result || !result.secure_url) {
-      throw new Error('Cloudinary upload did not return a secure URL.');
+    const result = rawResult as CloudinaryUploadResponseLike;
+
+    if (!result.secure_url || !result.public_id) {
+      throw new Error('Cloudinary upload did not return the expected upload response.');
     }
 
     if (!result.secure_url.startsWith('https://')) {

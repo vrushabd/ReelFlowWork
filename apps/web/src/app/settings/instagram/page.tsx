@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { RotateCcw, CheckCircle2, AlertTriangle, ExternalLink, XCircle, User } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { RotateCcw, CheckCircle2, AlertTriangle, ExternalLink, XCircle, User, KeyRound } from 'lucide-react';
 
 type InstagramSettings = {
   isConnected: boolean;
@@ -22,6 +23,10 @@ export default function InstagramSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState('');
+  const [dashboardPassword, setDashboardPassword] = useState('');
+  const [savingToken, setSavingToken] = useState(false);
+  const [tokenMessage, setTokenMessage] = useState<string | null>(null);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -39,6 +44,29 @@ export default function InstagramSettingsPage() {
   useEffect(() => {
     fetchSettings();
   }, []);
+
+  const saveAccessToken = async () => {
+    setSavingToken(true);
+    setTokenMessage(null);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/settings/instagram/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken, dashboardPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update Meta token.');
+
+      setAccessToken('');
+      setDashboardPassword('');
+      setTokenMessage(`Token updated and verified for @${data.username}.`);
+      await fetchSettings();
+    } catch (error: any) {
+      setTokenMessage(error.message || 'Failed to update Meta token.');
+    } finally {
+      setSavingToken(false);
+    }
+  };
 
   const testConnection = async () => {
     setTesting(true);
@@ -203,6 +231,40 @@ export default function InstagramSettingsPage() {
               {testMessage && <p className="text-sm text-muted-foreground">{testMessage}</p>}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" /> Change Meta API Token
+          </CardTitle>
+          <CardDescription>
+            The new token is validated with Instagram before it replaces the current publishing token. It is never displayed after saving.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Input
+            type="password"
+            value={accessToken}
+            onChange={(event) => setAccessToken(event.target.value)}
+            placeholder="New Instagram User Access Token"
+            autoComplete="off"
+          />
+          <Input
+            type="password"
+            value={dashboardPassword}
+            onChange={(event) => setDashboardPassword(event.target.value)}
+            placeholder="Confirm dashboard password"
+            autoComplete="current-password"
+          />
+          <Button
+            onClick={saveAccessToken}
+            disabled={savingToken || !accessToken.trim() || !dashboardPassword}
+          >
+            {savingToken ? 'Validating and saving...' : 'Update Meta Token'}
+          </Button>
+          {tokenMessage && <p className="text-sm text-muted-foreground">{tokenMessage}</p>}
         </CardContent>
       </Card>
     </div>

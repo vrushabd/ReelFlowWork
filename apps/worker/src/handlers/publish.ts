@@ -81,11 +81,12 @@ export async function handlePublish(job: Job<PublishJobData>) {
       where: { isConnected: true }
     });
 
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    const tokenSetting = await prisma.setting.findUnique({ where: { key: 'INSTAGRAM_ACCESS_TOKEN' } });
+    const accessToken = tokenSetting?.value || process.env.INSTAGRAM_ACCESS_TOKEN;
     let instagramUserId = igAccount?.instagramUserId;
 
     if (!accessToken) {
-      throw new Error('No connected Instagram account found in DB, and INSTAGRAM_ACCESS_TOKEN not set in .env');
+      throw new Error('No Instagram access token is configured in Settings or the environment.');
     }
     if (!instagramUserId) {
       console.log('[Instagram] Retrieving authenticated account');

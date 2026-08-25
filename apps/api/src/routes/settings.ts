@@ -1,8 +1,22 @@
 import { Router } from 'express';
 import { prisma } from '@reelflow/database';
 import { getInstagramClient } from '@reelflow/instagram';
+import { timingSafeEqual } from 'node:crypto';
 
 const router = Router();
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+async function getInstagramAccessToken(): Promise<{ token: string; source: 'database' | 'env' | 'none' }> {
+  const setting = await prisma.setting.findUnique({ where: { key: 'INSTAGRAM_ACCESS_TOKEN' } });
+  if (setting?.value) return { token: setting.value, source: 'database' };
+  if (process.env.INSTAGRAM_ACCESS_TOKEN) return { token: process.env.INSTAGRAM_ACCESS_TOKEN, source: 'env' };
+  return { token: '', source: 'none' };
+}
 
 async function ensureSystemUserId(): Promise<string> {
   const existingUser = await prisma.user.findFirst({ where: { email: 'system@reelflow.local' } });
@@ -52,8 +66,8 @@ async function discoverAndSaveInstagramAccount(accessToken: string) {
 
 router.get('/instagram', async (req, res) => {
   try {
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-    const isConnectedEnv = !!accessToken;
+    const { token: accessToken, source: tokenSource } = await getInstagramAccessToken();
+    const isConnectedEnv = tokenSource === 'env';
 
     const igAccountDb = await prisma.instagramAccount.findFirst({
       where: { isConnected: true }
@@ -94,7 +108,7 @@ router.get('/instagram', async (req, res) => {
       profileTokenValid,
       publishingTokenValid,
       tokenError,
-      source: igAccountDb ? 'database' : (isConnectedEnv ? 'env' : 'none'),
+      source: tokenSource,
       instagramUserId: instagramUserId || null,
       username: username || null,
       profilePicture,
@@ -108,7 +122,7 @@ router.get('/instagram', async (req, res) => {
 router.post('/instagram/test', async (req, res) => {
   try {
     console.log('[Instagram] Checking connection');
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+    const { token: accessToken } = await getInstagramAccessToken();
     if (!accessToken) {
       return res.status(400).json({
         success: false,
@@ -138,6 +152,37 @@ router.post('/instagram/test', async (req, res) => {
         ? 'Reconnect the Instagram account and grant the required content publishing permission.'
         : 'Your Instagram access token is invalid or expired. Reconnect your Instagram account.',
     });
+  }
+});
+
+router.post('/instagram/token', async (req, res) => {
+  try {
+    const configuredPassword = process.env.DASHBOARD_PASSWORD || '';
+    const dashboardPassword = typeof req.body.dashboardPassword === 'string' ? req.body.dashboardPassword : '';
+    const accessToken = typeof req.body.accessToken === 'string' ? req.body.accessToken.trim() : '';
+
+    if (!configuredPassword || !safeEqual(dashboardPassword, configuredPassword)) {
+      return res.status(401).json({ error: 'Incorrect dashboard password.' });
+    }
+    if (!accessToken || accessToken.includes('*')) {
+      return res.status(400).json({ error: 'Enter a valid Meta access token.' });
+    }
+
+    const savedAccount = await discoverAndSaveInstagramAccount(accessToken);
+    await prisma.setting.upsert({
+      where: { key: 'INSTAGRAM_ACCESS_TOKEN' },
+      update: { value: accessToken, isSecret: true },
+      create: { key: 'INSTAGRAM_ACCESS_TOKEN', value: accessToken, isSecret: true },
+    });
+
+    res.json({
+      success: true,
+      username: savedAccount.username,
+      instagramUserId: savedAccount.instagramUserId,
+    });
+  } catch (error: any) {
+    console.warn('[Instagram] Token update failed:', error?.message || 'Unknown error');
+    res.status(400).json({ error: 'Meta rejected this token. Verify it is valid and has publishing permissions.' });
   }
 });
 

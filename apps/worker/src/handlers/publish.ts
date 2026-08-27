@@ -175,6 +175,14 @@ export async function handlePublish(job: Job<PublishJobData>) {
     console.log('[Instagram] Publishing media...');
     const mediaId = await igClient.publishMediaContainer(containerId);
 
+    try {
+      await igClient.createComment(mediaId, 'Like and Share 🥺');
+      console.log('[Instagram] ✓ First comment added');
+    } catch (commentError) {
+      const message = commentError instanceof Error ? commentError.message : 'Unknown comment error';
+      console.warn(`[Instagram] Reel published, but first comment could not be added: ${message}`);
+    }
+
     // 4. Update Database
     await prisma.post.create({
       data: {

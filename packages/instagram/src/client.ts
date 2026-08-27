@@ -103,4 +103,21 @@ export class InstagramClient {
       throw new Error(`Failed to publish media: ${error.response?.data?.error?.message || error.message}`);
     }
   }
+
+  async createComment(mediaId: string, message: string): Promise<string> {
+    try {
+      const response = await axios.post(`${this.baseUrl}/${mediaId}/comments`, {
+        message,
+        access_token: this.accessToken,
+      });
+
+      if (!response.data?.id) {
+        throw new Error('Instagram did not return a comment ID.');
+      }
+
+      return response.data.id;
+    } catch (error: any) {
+      throw new Error(`Failed to create Instagram comment: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
 }
